@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KING BINGO ROYAL - PRO EDITION</title>
+    <style>
+        :root { --gold: #ffd700; --orange: #ff6600; --dark: #0a0a0a; --green: #28a745; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--dark); color: white; margin: 0; text-align: center; }
+        
+        .top-nav { display: grid; grid-template-columns: repeat(4, 1fr); background: #000; padding: 12px; border-bottom: 2px solid var(--gold); position: sticky; top: 0; z-index: 100; }
+        .top-nav div { font-size: 10px; color: #888; }
+        .top-nav span { display: block; color: var(--gold); font-size: 14px; font-weight: bold; }
+
+        .screen { display: none; padding: 15px; }
+        .active { display: block; }
+
+        .pool-container { background: #1a1a1a; border-radius: 15px; padding: 10px; border: 1px solid #333; margin-top: 10px; }
+        .pool { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; height: 260px; overflow-y: auto; }
+        .c-btn { background: #222; color: #eee; border: 1px solid #444; padding: 12px 0; border-radius: 8px; font-weight: bold; }
+        .c-btn.selected { background: var(--gold) !important; color: black !important; }
+
+        #preview-box { margin: 15px 0; padding: 10px; background: rgba(255, 215, 0, 0.1); border-radius: 10px; border: 1px dashed var(--gold); display: none; }
+
+        .ball-zone { width: 90px; height: 90px; background: white; border-radius: 50%; margin: 20px auto; border: 5px solid var(--gold); display: flex; align-items: center; justify-content: center; }
+        #ball-num { color: black; font-size: 40px; font-weight: 900; }
+        
+        .bingo-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; background: #333; padding: 10px; border-radius: 10px; }
+        .cell { aspect-ratio: 1; background: white; color: black; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; border-radius: 5px; }
+        .cell.marked { background: var(--green) !important; color: white !important; }
+        .cell.king-cell { background: #007bff; color: white; font-size: 9px; }
+
+        .btn-main { background: linear-gradient(var(--orange), #d35400); border: none; padding: 18px; width: 100%; border-radius: 40px; color: white; font-size: 20px; font-weight: bold; margin-top: 10px; }
+        #win-popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.95); border: 3px solid var(--gold); padding: 30px; border-radius: 20px; z-index: 1000; display: none; width: 85%; }
+    </style>
+</head>
+<body>
+
+    <audio id="snd-ball" src="https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3"></audio>
+    <audio id="snd-win" src="https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3"></audio>
+    <audio id="snd-select" src="https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3"></audio>
+
+    <div id="win-popup">
+        <h2 style="color:var(--gold);">🏆 ቢንጎ ተበልቷል!</h2>
+        <p>ተጫዋች <span id="winner-name" style="color:var(--gold);">#--</span> አሸንፏል!</p>
+        <p>ጠቅላላ ሽልማት፡ <span id="win-amount">0</span> ብር</p>
+        <button class="btn-main" onclick="location.reload()">ተመለስ</button>
+    </div>
+
+    <div id="scr-select" class="screen active">
+        <div class="top-nav">
+            <div>WALLET<span id="wallet-display">100.00</span></div>
+            <div>STAKE<span>10.00</span></div>
+            <div>STATUS<span>LIVE</span></div>
+            <div>CUT<span>-50.00</span></div>
+        </div>
+        <h2 style="color:var(--gold); margin-top:10px;">KING BINGO ROYAL</h2>
+        <div id="preview-box">የተመረጠ ካርቴላ: <span id="pre-id" style="color:var(--gold); font-size:20px;">#--</span></div>
+        <div class="pool-container"><div class="pool" id="pool"></div></div>
+        <button class="btn-main" onclick="startWait()">JOIN GAME</button>
+    </div>
+
+    <div id="scr-wait" class="screen">
+        <h2 style="margin-top:100px; color:var(--gold);">ተጫዋቾች በመግባት ላይ...</h2>
+        <div id="timer" style="font-size:80px; font-weight:900;">15</div>
+        <p>የገቡ ተጫዋቾች፡ <span id="player-count">0</span></p>
+    </div>
+
+    <div id="scr-game" class="screen">
+        <div class="ball-zone"><div id="ball-num">-</div></div>
+        <div style="background:#222; padding:5px; border-radius:5px; margin-bottom:10px; font-size:12px;">CARD #<span id="game-card-id">0</span> | PRIZE: <span id="live-prize">0</span></div>
+        <div class="bingo-grid" id="grid"></div>
+        <button class="btn-main" onclick="userClaimBingo()">BINGO!</button>
+    </div>
+
+    <script>
+        let wallet = 100.00;
+        let stake = 10.00;
+        let houseCut = 50.00;
+        let selectedCard = null;
+        let cardData = {};
+        let calledNums = [];
+        let gameActive = false;
+        let playersInGame = 0;
+
+        function playSnd(id) { document.getElementById(id).play().catch(e => {}); }
+
+        function init() {
+            const pool = document.getElementById('pool');
+            for(let i=1; i<=200; i++) {
+                let nums = [];
+                for(let j=0; j<25; j++) nums.push(Math.floor(Math.random()*75)+1);
+                nums[12] = 'KING';
+                cardData[i] = nums;
+                let btn = document.createElement('button');
+                btn.className = 'c-btn'; btn.innerText = i;
+                btn.onclick = () => {
+                    selectedCard = i;
+                    playSnd('snd-select');
+                    document.querySelectorAll('.c-btn').forEach(b => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                    document.getElementById('preview-box').style.display = 'block';
+                    document.getElementById('pre-id').innerText = "#" + i;
+                };
+                pool.appendChild(btn);
+            }
+        }
+
+        function startWait() {
+            if(!selectedCard) return alert("ካርቴላ ይምረጡ!");
+            wallet -= stake;
+            document.getElementById('wallet-display').innerText = wallet.toFixed(2);
+            document.getElementById('scr-select').classList.remove('active');
+            document.getElementById('scr-wait').classList.add('active');
+            
+            let sec = 15;
+            let t = setInterval(() => {
+                sec--;
+                playersInGame = Math.floor(Math.random() * (180 - 120) + 120); // 120-180 ተጫዋች
+                document.getElementById('timer').innerText = sec;
+                document.getElementById('player-count').innerText = Math.floor(playersInGame * (1 - sec/15));
+                if(sec <= 0) { clearInterval(t); startGame(); }
+            }, 1000);
+        }
+
+        function startGame() {
+            gameActive = true;
+            let totalPrize = (playersInGame * stake) - houseCut;
+            document.getElementById('win-amount').innerText = totalPrize.toFixed(2);
+            document.getElementById('live-prize').innerText = totalPrize.toFixed(2) + " ETB";
+            
+            document.getElementById('scr-wait').classList.remove('active');
+            document.getElementById('scr-game').classList.add('active');
+            document.getElementById('game-card-id').innerText = selectedCard;
+            
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            cardData[selectedCard].forEach((n, idx) => {
+                grid.innerHTML += `<div class="cell ${n==='KING'?'king-cell':''}" id="idx-${idx}">${n}</div>`;
+            });
+
+            let loop = setInterval(() => {
+                if(!gameActive) return clearInterval(loop);
+                let ball = Math.floor(Math.random()*75)+1;
+                calledNums.push(ball);
+                playSnd('snd-ball');
+                document.getElementById('ball-num').innerText = ball;
+                
+                cardData[selectedCard].forEach((n, idx) => {
+                    if(n === ball) document.getElementById(`idx-${idx}`).classList.add('marked');
+                });
+
+                // ከ 24ኛው ቁጥር በኋላ በዘፈቀደ አሸናፊ ማውጣት
+                if(calledNums.length > 24 && Math.random() < 0.06) { 
+                    showWinnerPopup("#" + Math.floor(Math.random()*200));
+                    clearInterval(loop);
+                }
+            }, 3800);
+        }
+
+        function showWinnerPopup(name) {
+            gameActive = false;
+            playSnd('snd-win');
+            document.getElementById('winner-name').innerText = name;
+            document.getElementById('win-popup').style.display = 'block';
+        }
+
+        init();
+    </script>
+</body>
+</html>
